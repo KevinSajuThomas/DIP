@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { prisma } from "../lib/prisma.js";
+import type { Prisma } from "@prisma/client";
 import { logger } from "../lib/logger.js";
 import { withRetry, withTimeout } from "../lib/retry.js";
 import { getMarketDataProvider } from "../services/providerFactory.js";
@@ -96,7 +97,7 @@ async function runMonthlyCycleIfDue(strategy: any) {
   const config = toStrategyConfig(strategy.settings);
   const cycle = calculateMonthlyCycle(config, startingReserve);
 
-  await prisma.$transaction(async (tx: typeof prisma) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.investmentCycle.create({
       data: {
         strategyId: strategy.id,
