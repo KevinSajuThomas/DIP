@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  strategies Strategy[]
+}
+
+/// A user may eventually have multiple strategies (PART 47/48), each with
+/// its own isolated reserve. Version 1 creates exactly one: "NIFTY 50 DipBuy".
+model Strategy {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String   @default("NIFTY 50 DipBuy")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  settings           StrategySettings?
+  primaryInstrument  Instrument?         @relation("PrimaryInstrument")
+  reserveLedger      ReserveLedgerEntry[]
+  investmentCycles   InvestmentCycle[]
+  transactions       Transaction[]
+  thresholdEvents    ThresholdEvent[]
+  auditLogs          AuditLog[]
+  backtestRuns       BacktestRun[]
+  notifications      Notification[]
+}
+
+/// Authoritative, configurable strategy parameters (PART 2, 43).
+/// normalInvestment + reserveContribution must equal monthlyBudget — enforced
+/// by strategyEngine.validateStrategyConfig(), not just at the DB layer.
+model StrategySettings {
+  id                       String   @id @default(cuid())
+  strategyId               String   @unique
+  strategy                 Strategy @relation(fields: [strategyId], references: [id])
+
+  monthlyBudget            Decimal  @default(10000)
+  normalInvestment         Decimal  @default(7000)
+  reserveContribution      Decimal  @default(3000)
+  maxReserve               Decimal  @default(15000)
+  capRelease               Decimal  @default(7000)
+  dipDeploymentMultiplier  Decimal  @default(500)
+  referenceMode            String   @default("CURRENT_CYCLE_HIGH")
+  skipKeepsTimerRunning    Boolean  @default(true)
+
+  whatsappEnabled          Boolean  @default(false)
+  notificationFrequency    String   @default("IMMEDIATE")
+  pollingIntervalSeconds   Int      @default(60)
+
+  updatedAt                DateTime @updatedAt
+}
+
+/// Market-dip thresholds are GATES only (PART 7) — no deploymentAmount
+/// field. The deployment amount always comes from strategyEngine's
+/// months-since-last-deployment formula.
+model Threshold {
+  id           String     @id @default(cuid())
+  instrumentId String
+  instrument   Instrument @relation(fields: [instrumentId], references: [id])
+  percent      Decimal
+  alertsEnabled Boolean   @default(true)
+  createdAt    DateTime   @default(now())
+
+  @@unique([instrumentId, percent])
+}
+
+model Instrument {
+  id          String   @id @default(cuid())
+  symbol      String   @unique
+  displayName String
+  category    String
+  primaryForStrategyId String?  @unique
+  primaryForStrategy   Strategy? @relation("PrimaryInstrument", fields: [primaryForStrategyId], references: [id])
+  createdAt   DateTime @default(now())
+
+  thresholds       Threshold[]
+  referenceCycles  ReferenceCycle[]
+  thresholdEvents  ThresholdEvent[]
+  marketSnapshots  MarketSnapshot[]
+}
+
+model ReferenceCycle {
+  id                 String     @id @default(cuid())
+  instrumentId       String
+  instrument         Instrument @relation(fields: [instrumentId], references: [id])
+  referenceHigh      Decimal
+  referenceHighDate  DateTime
+  mode               String
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  closedAt           DateTime?
+
+  thresholdEvents ThresholdEvent[]
+
+  @@index([instrumentId, isActive])
+}
+
+/// One row per threshold crossing per reference cycle. A rapid
+/// multi-threshold move (PART 21/58) creates one row per level crossed
+/// (for history/audit) but the strategy layer computes exactly ONE
+/// deployment, keyed off isDeepestInBatch.
+model ThresholdEvent {
+  id                 String          @id @default(cuid())
+  strategyId         String
+  strategy           Strategy        @relation(fields: [strategyId], references: [id])
+  instrumentId       String
+  instrument         Instrument      @relation(fields: [instrumentId], references: [id])
+  referenceCycleId   String
+  referenceCycle     ReferenceCycle  @relation(fields: [referenceCycleId], references: [id])
+  thresholdPercent   Decimal
+  batchId            String
+  isDeepestInBatch    Boolean        @default(false)
+  triggerPrice       Decimal
+  actualPrice        Decimal
+  drawdownPercent    Decimal
+  classification     String
+  status             String          @default("CROSSED")
+  monthsSinceLastDeployment Int?
+  calculatedDeployment Decimal?
+  actualDeployment     Decimal?
+  reserveBefore         Decimal?
+  reserveAfter           Decimal?
+  triggeredAt        DateTime        @default(now())
+  resolvedAt         DateTime?
+
+  notifications Notification[]
+  transactions  Transaction[]
+
+  @@unique([referenceCycleId, thresholdPercent])
+  @@index([strategyId, batchId])
+}
+
+model MarketSnapshot {
+  id           String     @id @default(cuid())
+  instrumentId String
+  instrument   Instrument @relation(fields: [instrumentId], references: [id])
+  price        Decimal
+  fetchedAt    DateTime   @default(now())
+  isStale      Boolean    @default(false)
+  providerName String
+
+  @@index([instrumentId, fetchedAt])
+}
+
+/// Chronological ledger of every reserve change: contributions, dip
+/// deployments, cap releases, and diverted-overflow entries (PART 16).
+/// Never mutated after creation — corrections are new offsetting rows.
+model ReserveLedgerEntry {
+  id           String   @id @default(cuid())
+  strategyId   String
+  strategy     Strategy @relation(fields: [strategyId], references: [id])
+  entryType    String
+  amount       Decimal
+  balanceAfter Decimal
+  investmentCycleId String?
+  investmentCycle   InvestmentCycle? @relation(fields: [investmentCycleId], references: [id])
+  thresholdEventId  String?
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([strategyId, createdAt])
+}
+
+/// One row per calendar month per strategy. Idempotency is enforced via the
+/// unique constraint below (PART 62).
+model InvestmentCycle {
+  id                          String   @id @default(cuid())
+  strategyId                  String
+  strategy                    Strategy @relation(fields: [strategyId], references: [id])
+  cycleMonth                  String
+  monthlyBudget                Decimal
+  normalInvestment              Decimal
+  plannedReserveContribution    Decimal
+  actualReserveContribution     Decimal
+  capDeployment                 Decimal
+  contributionDivertedToCapRelease Decimal @default(0)
+  totalActualInvestment         Decimal
+  startingReserve                Decimal
+  endingReserve                  Decimal
+  processedAt                    DateTime @default(now())
+
+  reserveLedgerEntries ReserveLedgerEntry[]
+  transactions         Transaction[]
+
+  @@unique([strategyId, cycleMonth])
+}
+
+model Transaction {
+  id                String          @id @default(cuid())
+  strategyId        String
+  strategy          Strategy        @relation(fields: [strategyId], references: [id])
+  investmentCycleId String?
+  investmentCycle   InvestmentCycle? @relation(fields: [investmentCycleId], references: [id])
+  thresholdEventId  String?
+  thresholdEvent    ThresholdEvent?  @relation(fields: [thresholdEventId], references: [id])
+  type      String
+  amount    Decimal
+  instrument String
+  price      Decimal?
+  units      Decimal?
+  source     String  @default("MANUAL")
+  status     String  @default("RECORDED")
+  notes      String?
+  date       DateTime
+  createdAt  DateTime @default(now())
+}
+
+model BacktestRun {
+  id            String   @id @default(cuid())
+  strategyId    String
+  strategy      Strategy @relation(fields: [strategyId], references: [id])
+  periodYears   Int
+  requestedAt   DateTime @default(now())
+
+  results BacktestResultRow[]
+}
+
+model BacktestResultRow {
+  id                          String      @id @default(cuid())
+  backtestRunId               String
+  backtestRun                 BacktestRun @relation(fields: [backtestRunId], references: [id])
+  strategyName                 String
+  totalAllocated                Decimal
+  totalActuallyInvested          Decimal
+  finalPortfolioValue             Decimal
+  absoluteProfit                   Decimal
+  cagrPercent                       Decimal
+  xirrPercent                        Decimal
+  maxDrawdownPercent                  Decimal
+  averagePurchasePrice                  Decimal
+  unitsAccumulated                        Decimal
+  reserveUtilizationPercent                Decimal
+  averageReserveSize                        Decimal
+  maxReserveObserved                          Decimal
+  dipDeploymentCount                            Int
+  capDeploymentCount                             Int
+  monthsWithReserve                               Int
+  cashDragAmount                                    Decimal
+}
+
+model Notification {
+  id               String          @id @default(cuid())
+  strategyId       String
+  strategy         Strategy        @relation(fields: [strategyId], references: [id])
+  thresholdEventId String?
+  thresholdEvent   ThresholdEvent? @relation(fields: [thresholdEventId], references: [id])
+  channel          String          @default("WHATSAPP")
+  status           String
+  messageBody      String
+  errorMessage     String?
+  sentAt           DateTime        @default(now())
+}
+
+/// Every strategy event must be auditable (PART 38).
+model AuditLog {
+  id         String   @id @default(cuid())
+  strategyId String
+  strategy   Strategy @relation(fields: [strategyId], references: [id])
+  eventType  String
+  summary    String
+  detailsJson String
+  createdAt  DateTime @default(now())
+
+  @@index([strategyId, createdAt])
+}
+
+/// Read-only, officially-supported broker capability model (PART 25/26).
+/// Never stores password/MPIN/OTP.
+model BrokerConnection {
+  id                  String   @id @default(cuid())
+  userId              String
+  provider            String   @default("INDMONEY")
+  status               String  @default("DISCONNECTED")
+  portfolioReadSupported Boolean @default(false)
+  balanceReadSupported    Boolean @default(false)
+  orderPlacementSupported  Boolean @default(false)
+  automaticTradingEnabled   Boolean @default(false)
+  encryptedCredentialsRef    String?
+  lastConnectedAt             DateTime?
+  createdAt                    DateTime @default(now())
+}
