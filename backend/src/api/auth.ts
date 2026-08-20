@@ -27,15 +27,11 @@ authRouter.post("/register", async (req, res) => {
     data: {
       email,
       passwordHash,
-      settings: {
-        create: {
-          monthlyBudget: 10000,
-          normalSipAmount: 7000,
-          reserveAmount: 3000,
-        },
-      },
     },
   });
+  // The default "NIFTY 50 DipBuy" strategy is created lazily on first
+  // access (see getOrCreateDefaultStrategy in api/strategy.ts) rather than
+  // here, so registration doesn't need to know strategy defaults at all.
 
   const token = signToken(user.id);
   res.status(201).json({ token, userId: user.id });
