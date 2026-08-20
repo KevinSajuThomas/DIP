@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/useAuth.ts","./src/vite-env.d.ts","./src/pages/AlertHistory.tsx","./src/pages/Backtesting.tsx","./src/pages/Dashboard.tsx","./src/pages/DipRules.tsx","./src/pages/Login.tsx","./src/pages/MarketMonitor.tsx","./src/pages/Portfolio.tsx","./src/pages/Settings.tsx"],"version":"5.9.3"}
