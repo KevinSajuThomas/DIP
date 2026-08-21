@@ -26,6 +26,7 @@ export default function Settings() {
         capRelease: Number(form.capRelease),
         dipDeploymentMultiplier: Number(form.dipDeploymentMultiplier),
         whatsappEnabled: form.whatsappEnabled,
+        whatsappRecipientNumber: form.whatsappRecipientNumber || null,
         pollingIntervalSeconds: Number(form.pollingIntervalSeconds),
       });
       setForm(updated);
@@ -72,6 +73,18 @@ export default function Settings() {
           <input type="checkbox" checked={form.whatsappEnabled} onChange={(e) => update("whatsappEnabled", e.target.checked)} />
           {" "}WhatsApp alerts enabled
         </label>
+        <div style={{ marginTop: 8 }}>
+          WhatsApp number (E.164, e.g. +919876543210)<br />
+          <input
+            placeholder="+91XXXXXXXXXX"
+            value={form.whatsappRecipientNumber ?? ""}
+            onChange={(e) => update("whatsappRecipientNumber", e.target.value)}
+          />
+          <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 4 }}>
+            The access token and phone number ID stay in server environment variables (never
+            exposed here) — this is only the number alerts get sent to.
+          </div>
+        </div>
         <div style={{ marginTop: 8 }}>
           Polling interval (seconds)<br />
           <input value={form.pollingIntervalSeconds} onChange={(e) => update("pollingIntervalSeconds", e.target.value)} />

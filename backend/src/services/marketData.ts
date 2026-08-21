@@ -22,12 +22,24 @@ export interface MarketStatus {
  * concrete provider (a paid API, a free API, a broker feed, etc.) can be
  * swapped without touching the engine or worker. Never scrape.
  */
+export interface SymbolSearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+  country?: string;
+  type?: string;
+}
+
 export interface MarketDataProvider {
   readonly name: string;
   readonly isDelayed: boolean;
   getQuote(symbol: string): Promise<Quote>;
   getHistoricalData(symbol: string, fromIso: string, toIso: string): Promise<HistoricalPoint[]>;
   getMarketStatus(): Promise<MarketStatus>;
+  /** Optional: lets the UI offer symbol autocomplete instead of forcing the
+   * user to guess an obscure ticker string. Not every provider supports
+   * this, so it's optional on the interface. */
+  searchSymbols?(query: string): Promise<SymbolSearchResult[]>;
 }
 
 /**
@@ -128,6 +140,28 @@ export class TwelveDataProvider implements MarketDataProvider {
       session: isOpen ? "REGULAR" : "CLOSED",
       asOf: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Real, documented Twelve Data endpoint: GET /symbol_search?symbol=X
+   * Returns matching instruments ordered by relevance. The exact response
+   * envelope/field names were not fully confirmed from public docs at
+   * implementation time, so this parses defensively across the couple of
+   * shapes Twelve Data's endpoints commonly use (`data` array with either
+   * `instrument_name` or `name`) rather than assuming one exact schema —
+   * if your account returns something different, log the raw response
+   * once and adjust the field names below.
+   */
+  async searchSymbols(query: string): Promise<SymbolSearchResult[]> {
+    const raw = await this.request<any>("/symbol_search", { symbol: query });
+    const list: any[] = raw.data ?? raw.matches ?? raw.result ?? (Array.isArray(raw) ? raw : []);
+    return list.map((d) => ({
+      symbol: d.symbol,
+      name: d.instrument_name ?? d.name ?? d.symbol,
+      exchange: d.exchange ?? "",
+      country: d.country,
+      type: d.instrument_type ?? d.type,
+    }));
   }
 }
 

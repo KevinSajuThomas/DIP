@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { Card, MetricCard, StatusBadge, ProgressBar, EmptyState, ChangeIndicator } from "../components/ui.js";
 import { formatINR, formatPercent } from "../lib/format.js";
+import { PriceChart, DrawdownChart } from "../components/charts.js";
 
 export default function Dashboard() {
   const [strategy, setStrategy] = useState<any>(null);
@@ -9,6 +10,8 @@ export default function Dashboard() {
   const [instruments, setInstruments] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<Record<string, any>>({});
   const [pendingEvents, setPendingEvents] = useState<any[]>([]);
+  const [priceHistory, setPriceHistory] = useState<Array<{ date: string; close: number }>>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -46,6 +49,14 @@ export default function Dashboard() {
   const primaryInstrument = instruments.find((i) => i.primaryForStrategyId) ?? null;
   const primaryStatus = primaryInstrument ? statuses[primaryInstrument.id] : null;
   const primaryEval = primaryStatus?.evaluation;
+
+  useEffect(() => {
+    if (!primaryInstrument) return;
+    api
+      .getMarketHistory(primaryInstrument.symbol, 180)
+      .then(setPriceHistory)
+      .catch((e) => setHistoryError(e instanceof Error ? e.message : String(e)));
+  }, [primaryInstrument?.symbol]);
   const normalInvestment = Number(settings?.normalInvestment ?? 0);
   const reserveContribution = Number(settings?.reserveContribution ?? 0);
   const monthlyBudget = Number(settings?.monthlyBudget ?? 0);
@@ -164,6 +175,22 @@ export default function Dashboard() {
             );
           })}
         </Card>
+      )}
+
+      {/* Price + drawdown charts */}
+      {primaryInstrument && (
+        <div className="grid-2">
+          <Card title={`${primaryInstrument.displayName} price (180d)`}>
+            {historyError ? (
+              <div className="error">{historyError}</div>
+            ) : (
+              <PriceChart data={priceHistory} referenceHigh={primaryEval?.referenceHigh ?? 0} />
+            )}
+          </Card>
+          <Card title="Drawdown from high">
+            {!historyError && <DrawdownChart data={priceHistory} referenceHigh={primaryEval?.referenceHigh ?? 0} />}
+          </Card>
+        </div>
       )}
 
       {/* Market overview */}

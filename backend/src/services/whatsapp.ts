@@ -23,25 +23,28 @@ export class WhatsAppService {
     return `https://graph.facebook.com/${this.config.apiVersion}/${this.config.phoneNumberId}/messages`;
   }
 
-  async sendAlert(messageBody: string): Promise<SendResult> {
-    return this.sendText(messageBody);
+  async sendAlert(messageBody: string, recipientOverride?: string | null): Promise<SendResult> {
+    return this.sendText(messageBody, recipientOverride);
   }
 
-  async sendTestMessage(): Promise<SendResult> {
+  async sendTestMessage(recipientOverride?: string | null): Promise<SendResult> {
     return this.sendText(
       "DipBuy test message.\n\nThis confirms your WhatsApp Business Cloud API " +
         "credentials are configured correctly. This is a test only — no threshold " +
-        "has been triggered."
+        "has been triggered.",
+      recipientOverride
     );
   }
 
-  private async sendText(body: string): Promise<SendResult> {
-    if (!this.config.accessToken || !this.config.phoneNumberId || !this.config.recipientNumber) {
+  private async sendText(body: string, recipientOverride?: string | null): Promise<SendResult> {
+    const recipient = recipientOverride || this.config.recipientNumber;
+    if (!this.config.accessToken || !this.config.phoneNumberId || !recipient) {
       return {
         ok: false,
         errorMessage:
-          "WhatsApp is not configured. Set WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID " +
-          "and WHATSAPP_RECIPIENT_NUMBER before enabling alerts.",
+          "WhatsApp is not configured. Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID " +
+          "as environment variables, and set a recipient number (in Settings, or via " +
+          "WHATSAPP_RECIPIENT_NUMBER) before enabling alerts.",
       };
     }
 
@@ -54,7 +57,7 @@ export class WhatsAppService {
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
-          to: this.config.recipientNumber,
+          to: recipient,
           type: "text",
           text: { body, preview_url: false },
         }),

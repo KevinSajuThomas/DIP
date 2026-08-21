@@ -1,19 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { Card, StatusBadge, EmptyState, ChangeIndicator } from "../components/ui.js";
 import { formatINR } from "../lib/format.js";
-
-const CORE = ["NIFTY 50", "NIFTY 100", "NIFTY 200", "NIFTY 500"];
-const SECTOR = ["NIFTY Bank", "NIFTY IT", "NIFTY Auto", "NIFTY Pharma", "NIFTY FMCG", "NIFTY Midcap 150", "NIFTY Smallcap 250"];
 
 export default function MarketMonitor() {
   const [strategy, setStrategy] = useState<any>(null);
   const [instruments, setInstruments] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<Record<string, any>>({});
-  const [displayName, setDisplayName] = useState(CORE[0]);
-  const [symbol, setSymbol] = useState("NIFTY50");
-  const [initialHigh, setInitialHigh] = useState("");
   const [showForm, setShowForm] = useState(false);
+
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<{ symbol: string; name: string; exchange: string } | null>(null);
+  const [initialHigh, setInitialHigh] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -40,18 +43,45 @@ export default function MarketMonitor() {
     setTimeout(() => setToast(null), 2500);
   };
 
+  const onQueryChange = (value: string) => {
+    setQuery(value);
+    setPicked(null);
+    setSearchError(null);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await api.searchSymbols(value);
+        setSearchResults(results.slice(0, 8));
+      } catch (e) {
+        setSearchError(e instanceof Error ? e.message : String(e));
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+  };
+
   const addInstrument = async () => {
+    if (!picked) return;
     try {
+      const isCore = /NIFTY\s?(50|100|200|500)\b/i.test(picked.name) || /NIFTY\s?(50|100|200|500)\b/i.test(picked.symbol);
       await api.createInstrument({
-        symbol,
-        displayName,
-        category: CORE.includes(displayName) ? "CORE_BROAD_MARKET" : "SECTOR_SEGMENT",
+        symbol: picked.symbol,
+        displayName: picked.name,
+        category: isCore ? "CORE_BROAD_MARKET" : "SECTOR_SEGMENT",
         initialReferenceHigh: Number(initialHigh),
         useDefaultThresholds: true,
       });
       setInitialHigh("");
+      setPicked(null);
+      setQuery("");
       setShowForm(false);
-      showToast(`${displayName} added`);
+      showToast(`${picked.name} added`);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -78,8 +108,8 @@ export default function MarketMonitor() {
         <Card>
           <EmptyState
             title="Set up your first market"
-            description="Add NIFTY 50 to start monitoring drawdowns and running the DipBuy strategy."
-            action={<button className="btn" onClick={() => setShowForm(true)}>Add NIFTY 50</button>}
+            description="Search for NIFTY 50 to start monitoring drawdowns and running the DipBuy strategy."
+            action={<button className="btn" onClick={() => setShowForm(true)}>Add an instrument</button>}
           />
         </Card>
       ) : !hasPrimary ? (
@@ -100,16 +130,44 @@ export default function MarketMonitor() {
         </div>
 
         {showForm && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-            <select
-              value={displayName}
-              onChange={(e) => { setDisplayName(e.target.value); setSymbol(e.target.value.replace(/\s+/g, "")); }}
-            >
-              <optgroup label="Core broad-market">{CORE.map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>
-              <optgroup label="Sector / segment">{SECTOR.map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>
-            </select>
-            <input placeholder="Reference high (₹)" value={initialHigh} onChange={(e) => setInitialHigh(e.target.value)} />
-            <button className="btn" onClick={addInstrument} disabled={!initialHigh}>Add</button>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ position: "relative", maxWidth: 360 }}>
+              <input
+                placeholder="Search e.g. Nifty 50"
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                style={{ width: "100%" }}
+              />
+              {query.trim().length >= 2 && !picked && (
+                <div style={{ background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8, marginTop: 4, maxHeight: 220, overflowY: "auto", position: "absolute", width: "100%", zIndex: 10 }}>
+                  {searching && <div style={{ padding: 10, fontSize: 12.5, color: "var(--text-muted)" }}>Searching…</div>}
+                  {searchError && <div style={{ padding: 10, fontSize: 12.5, color: "var(--negative)" }}>{searchError}</div>}
+                  {!searching && !searchError && searchResults.length === 0 && (
+                    <div style={{ padding: 10, fontSize: 12.5, color: "var(--text-muted)" }}>No matches</div>
+                  )}
+                  {searchResults.map((r) => (
+                    <div
+                      key={`${r.symbol}-${r.exchange}`}
+                      onClick={() => { setPicked(r); setQuery(`${r.name} (${r.symbol})`); setSearchResults([]); }}
+                      style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13 }}
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      <div style={{ fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ color: "var(--text-muted)", fontSize: 11.5 }}>{r.symbol} · {r.exchange}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {picked && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                <input placeholder="Reference high (₹)" value={initialHigh} onChange={(e) => setInitialHigh(e.target.value)} />
+                <button className="btn" onClick={addInstrument} disabled={!initialHigh}>
+                  Add {picked.name}
+                </button>
+              </div>
+            )}
           </div>
         )}
         {error && <div className="error">{error}</div>}

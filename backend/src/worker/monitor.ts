@@ -171,7 +171,7 @@ async function runMonthlyCycleIfDue(strategy: any) {
           normalInvestment: cycle.normalInvestment,
           requiresConfirmation: true,
         });
-        const sendResult = await whatsapp.sendAlert(message);
+        const sendResult = await whatsapp.sendAlert(message, strategy.settings?.whatsappRecipientNumber);
         await tx.notification.create({
           data: {
             strategyId: strategy.id,
@@ -327,7 +327,7 @@ async function processMarketDip(strategy: any, provider: ReturnType<typeof getMa
         normalInvestment: config.normalInvestment,
         requiresConfirmation: true,
       });
-      const sendResult = await whatsapp.sendAlert(message);
+      const sendResult = await whatsapp.sendAlert(message, strategy.settings?.whatsappRecipientNumber);
       await prisma.notification.create({
         data: {
           strategyId: strategy.id,

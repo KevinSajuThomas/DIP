@@ -51,6 +51,7 @@ const updateSettingsSchema = z.object({
   capRelease: z.number().positive(),
   dipDeploymentMultiplier: z.number().positive(),
   whatsappEnabled: z.boolean().optional(),
+  whatsappRecipientNumber: z.string().trim().min(1).nullable().optional(),
   pollingIntervalSeconds: z.number().int().min(10).optional(),
 });
 

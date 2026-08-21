@@ -6,16 +6,15 @@ import { WhatsAppService, loadWhatsAppConfigFromEnv } from "../services/whatsapp
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
 
-async function getDefaultStrategyId(userId: string): Promise<string | null> {
-  const strategy = await prisma.strategy.findFirst({ where: { userId, isActive: true } });
-  return strategy?.id ?? null;
+async function getDefaultStrategy(userId: string) {
+  return prisma.strategy.findFirst({ where: { userId, isActive: true }, include: { settings: true } });
 }
 
 notificationsRouter.get("/", async (req: AuthedRequest, res) => {
-  const strategyId = await getDefaultStrategyId(req.userId!);
-  if (!strategyId) return res.json([]);
+  const strategy = await getDefaultStrategy(req.userId!);
+  if (!strategy) return res.json([]);
   const logs = await prisma.notification.findMany({
-    where: { strategyId },
+    where: { strategyId: strategy.id },
     orderBy: { sentAt: "desc" },
     take: 100,
   });
@@ -23,15 +22,15 @@ notificationsRouter.get("/", async (req: AuthedRequest, res) => {
 });
 
 notificationsRouter.post("/test", async (req: AuthedRequest, res) => {
-  const strategyId = await getDefaultStrategyId(req.userId!);
+  const strategy = await getDefaultStrategy(req.userId!);
   const service = new WhatsAppService(loadWhatsAppConfigFromEnv());
-  const result = await service.sendTestMessage();
+  const result = await service.sendTestMessage(strategy?.settings?.whatsappRecipientNumber);
 
   let log = null;
-  if (strategyId) {
+  if (strategy) {
     log = await prisma.notification.create({
       data: {
-        strategyId,
+        strategyId: strategy.id,
         channel: "WHATSAPP",
         status: result.ok ? "TEST" : "FAILED",
         messageBody: "DipBuy test message. This confirms your WhatsApp Business Cloud API credentials are configured correctly. No threshold has been triggered.",

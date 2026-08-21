@@ -16,6 +16,12 @@ export interface PricePoint {
   isTradingDay?: boolean; // defaults true; false = market closed, skip
 }
 
+export interface BacktestSeriesPoint {
+  date: string;
+  invested: number;
+  value: number;
+}
+
 export interface BacktestResult {
   strategyName: string;
   totalAllocated: number; // sum of monthlyBudget across all months
@@ -34,6 +40,9 @@ export interface BacktestResult {
   capDeploymentCount: number;
   monthsWithReserve: number;
   cashDragAmount: number; // reserve left undeployed at the end
+  /** One point per month: cumulative amount invested vs. portfolio value at
+   * that month's last price. Powers the value-over-time comparison chart. */
+  series: BacktestSeriesPoint[];
 }
 
 interface Purchase {
@@ -100,6 +109,7 @@ export function runBacktest(
   let totalAllocated = new Decimal(0);
   let totalActuallyInvested = new Decimal(0);
   const purchases: Purchase[] = [];
+  const series: BacktestSeriesPoint[] = [];
 
   let peakValueSoFar = -Infinity;
   let maxDrawdownPercent = 0;
@@ -189,6 +199,14 @@ export function runBacktest(
       const dd = ((valueSoFar - peakValueSoFar) / peakValueSoFar) * 100;
       if (dd < maxDrawdownPercent) maxDrawdownPercent = dd;
     }
+
+    if (isNewMonth) {
+      series.push({
+        date: point.date,
+        invested: Math.round(totalActuallyInvested.toNumber() * 100) / 100,
+        value: Math.round(valueSoFar * 100) / 100,
+      });
+    }
   }
 
   const lastPrice = tradingDays[tradingDays.length - 1].price;
@@ -230,6 +248,7 @@ export function runBacktest(
     capDeploymentCount,
     monthsWithReserve,
     cashDragAmount: Math.round(reserve * 100) / 100,
+    series,
   };
 }
 

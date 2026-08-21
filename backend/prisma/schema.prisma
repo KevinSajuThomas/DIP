@@ -55,6 +55,11 @@ model StrategySettings {
   skipKeepsTimerRunning    Boolean  @default(true)
 
   whatsappEnabled          Boolean  @default(false)
+  /// Recipient phone number in E.164 format (e.g. +919876543210). This is
+  /// per-user configuration, not a secret like the access token — those
+  /// stay in environment variables only. If unset, the worker falls back
+  /// to WHATSAPP_RECIPIENT_NUMBER from the environment.
+  whatsappRecipientNumber  String?
   notificationFrequency    String   @default("IMMEDIATE")
   pollingIntervalSeconds   Int      @default(60)
 
