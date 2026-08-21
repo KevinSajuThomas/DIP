@@ -16,12 +16,23 @@ export default function Portfolio() {
   useEffect(() => { load(filter); }, [filter]);
 
   const record = async () => {
+    const amountNum = Number(amount);
+    const priceNum = price.trim() ? Number(price) : undefined;
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setError("Enter a valid amount greater than 0.");
+      return;
+    }
+    if (priceNum !== undefined && (!Number.isFinite(priceNum) || priceNum <= 0)) {
+      setError("Price must be a valid positive number, or left blank.");
+      return;
+    }
+    setError(null);
     try {
       await api.recordTransaction({
         type,
-        amount: Number(amount),
+        amount: amountNum,
         instrument,
-        price: price ? Number(price) : undefined,
+        price: priceNum,
       });
       setAmount(""); setPrice("");
       load(filter);
@@ -29,6 +40,8 @@ export default function Portfolio() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  const amountIsValid = Number.isFinite(Number(amount)) && Number(amount) > 0;
 
   if (!portfolio) return <div className="main">Loading...</div>;
 
@@ -60,7 +73,7 @@ export default function Portfolio() {
           <input placeholder="Instrument" value={instrument} onChange={(e) => setInstrument(e.target.value)} />
           <input placeholder="Amount (Rs)" value={amount} onChange={(e) => setAmount(e.target.value)} />
           <input placeholder="Price (Rs, optional)" value={price} onChange={(e) => setPrice(e.target.value)} />
-          <button onClick={record} disabled={!amount} className="btn">Record</button>
+          <button onClick={record} disabled={!amountIsValid} className="btn">Record</button>
         </div>
         {error && <div className="error">{error}</div>}
       </div>

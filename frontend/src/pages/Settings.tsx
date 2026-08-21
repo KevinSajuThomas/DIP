@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 
+function normalizeWhatsAppNumber(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("+")) return trimmed;
+  const digitsOnly = trimmed.replace(/[^\d]/g, "");
+  if (!digitsOnly) return null;
+  // Bare 10-digit numbers are assumed Indian mobile numbers (this app's
+  // primary use case) and get +91 prefixed automatically; anything else
+  // is passed through with a leading + so it's still valid E.164 shape.
+  if (digitsOnly.length === 10) return `+91${digitsOnly}`;
+  return `+${digitsOnly}`;
+}
+
 export default function Settings() {
   const [strategy, setStrategy] = useState<any>(null);
   const [form, setForm] = useState<any>(null);
@@ -26,7 +39,7 @@ export default function Settings() {
         capRelease: Number(form.capRelease),
         dipDeploymentMultiplier: Number(form.dipDeploymentMultiplier),
         whatsappEnabled: form.whatsappEnabled,
-        whatsappRecipientNumber: form.whatsappRecipientNumber || null,
+        whatsappRecipientNumber: normalizeWhatsAppNumber(form.whatsappRecipientNumber ?? ""),
         pollingIntervalSeconds: Number(form.pollingIntervalSeconds),
       });
       setForm(updated);

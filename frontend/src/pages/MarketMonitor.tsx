@@ -100,6 +100,17 @@ export default function MarketMonitor() {
     }
   };
 
+  const removeInstrument = async (instrumentId: string, name: string) => {
+    if (!confirm(`Remove ${name}? This deletes its price history, thresholds, and alert history too.`)) return;
+    try {
+      await api.deleteInstrument(instrumentId);
+      showToast(`${name} removed`);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const hasPrimary = instruments.some((i) => i.primaryForStrategyId);
 
   return (
@@ -199,6 +210,10 @@ export default function MarketMonitor() {
                           Set as primary
                         </button>
                       )}
+                      {" "}
+                      <button className="btn ghost sm" onClick={() => removeInstrument(i.id, i.displayName)} title="Remove">
+                        Remove
+                      </button>
                     </td>
                   </tr>
                 );

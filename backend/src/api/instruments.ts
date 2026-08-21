@@ -168,3 +168,37 @@ instrumentsRouter.post("/:id/reset-cycle", async (req: AuthedRequest, res) => {
 
   res.json(newCycle);
 });
+
+/**
+ * Removes an instrument and everything that references it. Used mainly to
+ * recover from a misconfigured symbol (e.g. one entered before symbol
+ * search existed) without leaving orphaned rows behind. Requires
+ * confirmation on the frontend before calling this.
+ */
+instrumentsRouter.delete("/:id", async (req: AuthedRequest, res) => {
+  const instrument = await prisma.instrument.findUnique({ where: { id: req.params.id } });
+  if (!instrument) return res.status(404).json({ error: "Instrument not found" });
+
+  const cycles = await prisma.referenceCycle.findMany({
+    where: { instrumentId: instrument.id },
+    select: { id: true },
+  });
+  const cycleIds = cycles.map((c: { id: string }) => c.id);
+
+  await prisma.$transaction([
+    prisma.notification.deleteMany({
+      where: { thresholdEvent: { instrumentId: instrument.id } },
+    }),
+    prisma.transaction.updateMany({
+      where: { thresholdEvent: { instrumentId: instrument.id } },
+      data: { thresholdEventId: null },
+    }),
+    prisma.thresholdEvent.deleteMany({ where: { instrumentId: instrument.id } }),
+    prisma.marketSnapshot.deleteMany({ where: { instrumentId: instrument.id } }),
+    prisma.threshold.deleteMany({ where: { instrumentId: instrument.id } }),
+    prisma.referenceCycle.deleteMany({ where: { id: { in: cycleIds } } }),
+    prisma.instrument.delete({ where: { id: instrument.id } }),
+  ]);
+
+  res.status(204).send();
+});
