@@ -37,6 +37,19 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Every hook must run unconditionally on every render (Rules of Hooks) —
+  // this must sit above the early `return`s below, not after them, or React
+  // sees a different hook count between the loading and loaded renders and
+  // throws "Rendered more hooks than during the previous render".
+  const primaryInstrumentForEffect = instruments.find((i) => i.primaryForStrategyId) ?? null;
+  useEffect(() => {
+    if (!primaryInstrumentForEffect) return;
+    api
+      .getMarketHistory(primaryInstrumentForEffect.symbol, 180)
+      .then(setPriceHistory)
+      .catch((e) => setHistoryError(e instanceof Error ? e.message : String(e)));
+  }, [primaryInstrumentForEffect?.symbol]);
+
   if (error) return <div className="main"><div className="error">{error}</div></div>;
   if (loading || !strategy) return <div className="main"><Card><div style={{ height: 120 }} /></Card></div>;
 
@@ -46,17 +59,10 @@ export default function Dashboard() {
   const reservePct = maxReserve ? Math.min((reserveBalance / maxReserve) * 100, 100) : 0;
   const capReached = reserveBalance >= maxReserve;
 
-  const primaryInstrument = instruments.find((i) => i.primaryForStrategyId) ?? null;
+  const primaryInstrument = primaryInstrumentForEffect;
   const primaryStatus = primaryInstrument ? statuses[primaryInstrument.id] : null;
   const primaryEval = primaryStatus?.evaluation;
 
-  useEffect(() => {
-    if (!primaryInstrument) return;
-    api
-      .getMarketHistory(primaryInstrument.symbol, 180)
-      .then(setPriceHistory)
-      .catch((e) => setHistoryError(e instanceof Error ? e.message : String(e)));
-  }, [primaryInstrument?.symbol]);
   const normalInvestment = Number(settings?.normalInvestment ?? 0);
   const reserveContribution = Number(settings?.reserveContribution ?? 0);
   const monthlyBudget = Number(settings?.monthlyBudget ?? 0);
