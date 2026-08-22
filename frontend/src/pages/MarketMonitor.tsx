@@ -14,7 +14,9 @@ export default function MarketMonitor() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [picked, setPicked] = useState<{ symbol: string; name: string; exchange: string } | null>(null);
-  const [initialHigh, setInitialHigh] = useState("");
+  const [fetchedPrice, setFetchedPrice] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -66,19 +68,36 @@ export default function MarketMonitor() {
     }, 350);
   };
 
+  const selectResult = async (r: { symbol: string; name: string; exchange: string }) => {
+    setPicked(r);
+    setQuery(`${r.name} (${r.symbol})`);
+    setSearchResults([]);
+    setFetchedPrice(null);
+    setPriceError(null);
+    setPriceLoading(true);
+    try {
+      const quote = await api.getQuote(r.symbol);
+      setFetchedPrice(quote.price);
+    } catch (e) {
+      setPriceError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPriceLoading(false);
+    }
+  };
+
   const addInstrument = async () => {
-    if (!picked) return;
+    if (!picked || fetchedPrice === null) return;
     try {
       const isCore = /NIFTY\s?(50|100|200|500)\b/i.test(picked.name) || /NIFTY\s?(50|100|200|500)\b/i.test(picked.symbol);
       await api.createInstrument({
         symbol: picked.symbol,
         displayName: picked.name,
         category: isCore ? "CORE_BROAD_MARKET" : "SECTOR_SEGMENT",
-        initialReferenceHigh: Number(initialHigh),
+        initialReferenceHigh: fetchedPrice,
         useDefaultThresholds: true,
       });
-      setInitialHigh("");
       setPicked(null);
+      setFetchedPrice(null);
       setQuery("");
       setShowForm(false);
       showToast(`${picked.name} added`);
@@ -159,7 +178,7 @@ export default function MarketMonitor() {
                   {searchResults.map((r) => (
                     <div
                       key={`${r.symbol}-${r.exchange}`}
-                      onClick={() => { setPicked(r); setQuery(`${r.name} (${r.symbol})`); setSearchResults([]); }}
+                      onClick={() => selectResult(r)}
                       style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13 }}
                       onMouseDown={(e) => e.preventDefault()}
                     >
@@ -172,9 +191,16 @@ export default function MarketMonitor() {
             </div>
 
             {picked && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-                <input placeholder="Reference high (₹)" value={initialHigh} onChange={(e) => setInitialHigh(e.target.value)} />
-                <button className="btn" onClick={addInstrument} disabled={!initialHigh}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                {priceLoading && <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Fetching current price…</span>}
+                {priceError && <span className="error" style={{ fontSize: 12.5 }}>{priceError}</span>}
+                {fetchedPrice !== null && (
+                  <span style={{ fontSize: 13 }}>
+                    Current price: <strong className="num">₹{fetchedPrice.toLocaleString("en-IN")}</strong>
+                    <span style={{ color: "var(--text-muted)" }}> — used as starting reference high</span>
+                  </span>
+                )}
+                <button className="btn" onClick={addInstrument} disabled={fetchedPrice === null}>
                   Add {picked.name}
                 </button>
               </div>

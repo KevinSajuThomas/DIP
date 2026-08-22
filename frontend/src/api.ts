@@ -74,6 +74,7 @@ export const api = {
     request<any>("/simulation/price", { method: "POST", body: JSON.stringify({ symbol, price }) }),
   getMarketStatus: () => request<any>("/market/status"),
   searchSymbols: (q: string) => request<any[]>(`/market/search?q=${encodeURIComponent(q)}`),
+  getQuote: (symbol: string) => request<{ price: number }>(`/market/${symbol}`),
   getMarketHistory: (symbol: string, days = 180) => request<Array<{ date: string; close: number }>>(`/market/${symbol}/history?days=${days}`),
   getHealth: () => request<any>("/health"),
 };
